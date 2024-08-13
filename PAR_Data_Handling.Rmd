@@ -1,0 +1,147 @@
+---
+title: "PAR Data Smoothing"
+output: html_notebook
+Author: Sven Kranz (edited by MB)
+---
+
+# Par Data Handling
+
+This file is to handle the insane amount of data that comes with the light meter files. It will smooth it out (outliers from opening the incubators), average it in 15 min intervals, and hopefully plot it!
+
+```{r Packages}
+
+library(ggplot2)
+library(data.table)
+library(zoo)
+
+library(dplyr)
+library(lubridate)
+
+```
+
+```{r Directory}
+
+setwd("C:/Users/mlb72/OneDrive/Documents/Rice/Lab/diurnal_paper/Diurnal_Data/PAR_Data")
+
+getwd()
+
+```
+
+The files you use will likely usually be different each time. Be sure to pay attention to your file names. Also, try to have the following columns:
+
+-   Datetime (in the custom format of "YYYY-MM-DD hh:mm:ss")
+
+-   PAR
+
+```{r Data}
+
+light <- read.csv(file = "FcylDLL_PAR.csv", header = T, sep = ",")
+
+```
+
+Sometimes, you may need to subset based off how long you let the meter run. We want as close to exactly 24hrs as possible. In that case, you will have to go into your CSV file and create the following column:
+
+-   Date
+
+Which should have ONLY date!
+
+### Skip this if you do not need to subset!
+
+If you do need to subset, please carry on.
+
+```{r Organizing}
+
+light_day <- subset(light, Date == "2021-04-29")
+# light_day$PAR <- light_day$X10..PAR1....Value
+
+```
+
+The next code will get rid of your insane amount of data bogging down your R so it doesn't crash!
+
+### If you did NOT subset, then run the following code:
+
+Ignore if you DID subset!
+
+```{r}
+
+light_day <- light
+
+```
+
+```{r}
+
+light_day$Datetime <- as.POSIXct(light_day$Datetime)
+
+```
+
+## If you did or did not subset- run this code:
+
+This will keep your R from crashing with too much light data (if you had several days of light data)
+
+```{r}
+
+light <- "yee haw"
+
+```
+
+The below code will run through your data and identify any outliers.
+
+```{r Outliers}
+
+# Step 1: Identify outliers 
+outliers <- scale(light_day$PAR)
+threshold <- 3 # Threshold for defining an outlier
+light_day$outlier <- abs(outliers) > threshold
+
+```
+
+This next code will replace the outliers with the average of the last 1500 points.
+
+```{r Outliers_B}
+
+light_day <- light_day %>%
+  mutate(PAR_corrected = ifelse(outlier, NA, PAR))
+
+for(i in which(light_day$outlier)) {
+  if(i > 1500) {
+    light_day$PAR_corrected[i] <- mean(light_day$PAR_corrected[(i-1500):(i-1)], na.rm = TRUE)
+  } else {
+    light_day$PAR_corrected[i] <- mean(light_day$PAR_corrected[1:(i-1)], na.rm = TRUE)
+  }
+}
+
+```
+
+This next code will group the data by 10min intervals and calculate the mean value!
+
+```{r Interval}
+
+light_day_aggregated <- light_day %>%
+  mutate(Datetime = floor_date(Datetime, "10 minutes")) %>%
+  group_by(Datetime) %>%
+  summarize(PAR_10min_avg = mean(PAR_corrected, na.rm = TRUE))
+
+```
+
+We have to export the file now- CHECK YOUR NAMING!!!
+
+```{r Export}
+
+write.csv(light_day_aggregated, 'Fcyl_DHL_averaged_PAR_81324.csv')
+
+```
+
+# Graphing!
+
+```{r Graphing}
+
+ggplot(light_day_aggregated, aes(Datetime, PAR_10min_avg))+
+  geom_point()+
+  geom_line()+
+  
+  # ylim(0,100)+ # this will change based on your light intensity! pay attention!
+  
+  theme_classic()
+  
+
+```
